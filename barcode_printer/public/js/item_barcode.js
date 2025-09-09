@@ -1,25 +1,25 @@
 frappe.ui.form.on('Item', {
     refresh(frm) {
         render_barcodes_preview(frm);
-        attach_live_barcode_listeners(frm);
+        //attach_live_barcode_listeners(frm);
     },
-    barcodes_add(frm) {
-        render_barcodes_preview(frm);
-        attach_live_barcode_listeners(frm);
-    },
-    barcodes_on_form_rendered(frm) {
-        render_barcodes_preview(frm);
-        attach_live_barcode_listeners(frm);
-    }
+    // barcodes_add(frm) {
+    //     render_barcodes_preview(frm);
+    //     attach_live_barcode_listeners(frm);
+    // },
+    // barcodes_on_form_rendered(frm) {
+    //     render_barcodes_preview(frm);
+    //     attach_live_barcode_listeners(frm);
+    // }
 });
 
-frappe.ui.form.on('Barcodes', {
-    barcode(frm, cdt, cdn) {
-        render_barcodes_preview(frm);
-    }
-});
+// frappe.ui.form.on('Barcodes', {
+//     barcode(frm, cdt, cdn) {
+//         render_barcodes_preview(frm); // fallback on blur/tab-out
+//     }
+// });
 
-// ------------------ JsBarcode Loader ------------------
+// ------------------ Helper Functions ------------------
 
 function loadJsBarcode(callback) {
     if (window.JsBarcode) {
@@ -35,21 +35,19 @@ function loadJsBarcode(callback) {
     document.head.appendChild(s);
 }
 
-// ------------------ Live Listeners ------------------
-
-function attach_live_barcode_listeners(frm) {
-    setTimeout(() => {
-        frm.fields_dict["barcodes"].grid.grid_rows.forEach(row => {
-            let $input = $(row.row).find('[data-fieldname="barcode"] input');
-            if ($input && !$input.data("barcode-listener")) {
-                $input.on("keyup", () => render_barcodes_preview(frm));
-                $input.data("barcode-listener", true);
-            }
-        });
-    }, 300);
-}
-
-// ------------------ Barcode Preview ------------------
+// function attach_live_barcode_listeners(frm) {
+//     setTimeout(() => {
+//         frm.fields_dict["barcodes"].grid.grid_rows.forEach(row => {
+//             let $input = $(row.row).find('[data-fieldname="barcode"] input');
+//             if ($input && !$input.data("barcode-listener")) {
+//                 $input.on("keyup", () => {
+//                     render_barcodes_preview(frm);
+//                 });
+//                 $input.data("barcode-listener", true);
+//             }
+//         });
+//     }, 300);
+// }
 
 function render_barcodes_preview(frm) {
     if (!frm.fields_dict || !frm.fields_dict['custom_barcode_preview']) {
@@ -73,6 +71,7 @@ function render_barcodes_preview(frm) {
             const itemPrice = frm.doc.standard_rate || frm.doc.price || "0.00";
             const svgId = 'barcode_svg_' + index;
 
+            // Container
             const $container = $(`
                 <div id="barcode_clickable_${index}" 
                     style="margin:20px 0; padding:10px; border:1px solid #ddd; border-radius:6px; text-align:center; cursor:pointer;">
@@ -87,11 +86,14 @@ function render_barcodes_preview(frm) {
 
             wrapper.append($container);
 
-            // Generate barcode preview
+            // Generate barcode SVG
             try {
+                let maxBarWidth = 2;
+                let calculatedWidth = Math.min((280 / row.barcode.length), maxBarWidth);
+
                 JsBarcode(`#${svgId}`, String(row.barcode), {
                     format: "CODE128",
-                    width: 2,
+                    width: calculatedWidth,
                     height: 60,
                     displayValue: false,
                     margin: 10
@@ -101,11 +103,11 @@ function render_barcodes_preview(frm) {
                 $container.append('<div style="color:red">❌ Error generating barcode</div>');
             }
 
-            // Print handler
+            // Attach print click
             document.getElementById(`barcode_clickable_${index}`).onclick = () => {
                 let copies = parseInt(prompt("How many copies do you want to print?", "1"));
                 if (!isNaN(copies) && copies > 0) {
-                    select_printer_and_print(`#${svgId}`, copies);
+                    print_to_zebra(frm, row.barcode, itemName, itemPrice, copies);
                 } else {
                     frappe.msgprint("⚠️ Invalid number of copies.");
                 }
@@ -114,57 +116,42 @@ function render_barcodes_preview(frm) {
     });
 }
 
-// ------------------ Print Functions ------------------
-
-function select_printer_and_print(svgSelector, copies = 1) {
+// ------------------ ZPL Printing ------------------
+function print_to_zebra(frm, barcode, itemName, itemPrice, copies = 1) {
     frappe.ui.form.qz_connect()
-        .then(() => qz.printers.find())
-        .then(printers => {
-            if (!printers || printers.length === 0) throw new Error("⚠️ No printers found via QZ Tray.");
+        .then(() => qz.printers.find("Zebra_Technologies_ZTC_ZD230-203dpi_ZPL"))
+        .then(printer => {
+            if (!printer) throw new Error("Zebra printer not found!");
 
-            let options = printers.map(p => `<option value="${p}">${p}</option>`).join("");
-            let dialogHtml = `
-                <label>Select Printer:</label>
-                <select id="printer_select" style="width:100%; margin:10px 0; padding:5px;">
-                    ${options}
-                </select>
-            `;
+            let zpl = `
+^XA
+^CI28
+^PW320
+^LL200
+^LH0,20
+^SD15
 
-            frappe.prompt([
-                { fieldname: "printer_html", fieldtype: "HTML", options: dialogHtml, label: "Printer" }
-            ], () => {
-                let selectedPrinter = document.getElementById("printer_select").value;
-                if (!selectedPrinter) {
-                    frappe.msgprint("⚠️ No printer selected.");
-                    return;
-                }
-                print_barcode_svg(svgSelector, selectedPrinter, copies);
-            }, __("Select Printer"));
+^FO100,20^A0N,18,20^FD${itemName}^FS
+^FO90,50^BY2,3,50^BEN,50,Y,N^FD${barcode}^FS
+^FO90,130^A0N,25,32^FDBDT. ${parseFloat(itemPrice).toFixed(2)}^FS
+
+^XZ
+`;
+
+            let config = qz.configs.create(printer, {
+                forceRaw: true,
+                density: 203,
+                size: { width: 3, height: 2, units: "in" },
+                margins: 0
+            });
+
+            let data = [];
+            for (let i = 0; i < copies; i++) {
+                data.push({ type: "raw", format: "command", flavor: "plain", data: zpl });
+            }
+
+            return qz.print(config, data);
         })
-        .catch(err => frappe.msgprint("QZ Print Error: " + err));
-}
-
-function print_barcode_svg(svgSelector, printerName, copies) {
-    let svgElement = document.querySelector(svgSelector);
-    if (!svgElement) {
-        frappe.msgprint("⚠️ SVG element not found for printing.");
-        return;
-    }
-
-    // Convert SVG to Data URI (base64)
-    let svgData = new XMLSerializer().serializeToString(svgElement);
-    let svgBlob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
-    let svgUrl = URL.createObjectURL(svgBlob);
-
-    // Use QZ Tray to print image
-    let config = qz.configs.create(printerName);
-
-    let data = [];
-    for (let i = 0; i < copies; i++) {
-        data.push({ type: "image", data: svgUrl });
-    }
-
-    qz.print(config, data)
-        .then(() => frappe.show_alert({ message: `✅ ${copies} barcode(s) sent to ${printerName}`, indicator: "green" }))
+        .then(() => frappe.show_alert({ message: `✅ ${copies} label(s) sent to Zebra!`, indicator: "green" }))
         .catch(err => frappe.msgprint("QZ Print Error: " + err));
 }
