@@ -6,31 +6,26 @@ app_email = "faisal@gmail.com"
 app_license = "mit"
 
 
+
+doctype_js = {
+    "Item": "public/js/item_barcode.js"
+}
+
+
+app_include_js = [
+    "https://cdnjs.cloudflare.com/ajax/libs/qz-tray/2.1.0/qz-tray.js"
+]
+
+
 fixtures = [
-    # Export Custom Fields (your barcode_preview field in Item)
     {
-        "dt": "Custom Field",
-        "filters": [["dt", "in", ["Item"]]]
-    },
-
-    # Export Client Scripts (your Item preview + printing JS)
-    {
-        "dt": "Client Script",
-        "filters": [["dt", "in", ["Item"]]]
-    },
-
-    # Export Print Formats (optional: if you make a Zebra Label print format in ERPNext UI)
-    {
-        "dt": "Print Format",
-        "filters": [["module", "=", "Barcode Printer"]]
-    },
-
-    # Export Property Setters (if you changed any core DocField properties in Item)
-    {
-        "dt": "Property Setter",
-        "filters": [["doc_type", "in", ["Item"]]]
+        "doctype": "Custom Field",
+        "filters": [
+            ["dt", "in", ["Item"]]
+        ]
     }
 ]
+
 
 # Apps
 # ------------------
