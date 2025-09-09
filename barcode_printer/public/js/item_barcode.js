@@ -1,23 +1,10 @@
 frappe.ui.form.on('Item', {
     refresh(frm) {
         render_barcodes_preview(frm);
-        //attach_live_barcode_listeners(frm);
+        
     },
-    // barcodes_add(frm) {
-    //     render_barcodes_preview(frm);
-    //     attach_live_barcode_listeners(frm);
-    // },
-    // barcodes_on_form_rendered(frm) {
-    //     render_barcodes_preview(frm);
-    //     attach_live_barcode_listeners(frm);
-    // }
+ 
 });
-
-// frappe.ui.form.on('Barcodes', {
-//     barcode(frm, cdt, cdn) {
-//         render_barcodes_preview(frm); // fallback on blur/tab-out
-//     }
-// });
 
 // ------------------ Helper Functions ------------------
 
@@ -34,20 +21,6 @@ function loadJsBarcode(callback) {
     s.onerror = () => console.error("❌ Failed to load JsBarcode");
     document.head.appendChild(s);
 }
-
-// function attach_live_barcode_listeners(frm) {
-//     setTimeout(() => {
-//         frm.fields_dict["barcodes"].grid.grid_rows.forEach(row => {
-//             let $input = $(row.row).find('[data-fieldname="barcode"] input');
-//             if ($input && !$input.data("barcode-listener")) {
-//                 $input.on("keyup", () => {
-//                     render_barcodes_preview(frm);
-//                 });
-//                 $input.data("barcode-listener", true);
-//             }
-//         });
-//     }, 300);
-// }
 
 function render_barcodes_preview(frm) {
     if (!frm.fields_dict || !frm.fields_dict['custom_barcode_preview']) {
