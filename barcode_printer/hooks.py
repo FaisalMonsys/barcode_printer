@@ -23,8 +23,19 @@ fixtures = [
         "filters": [
             ["dt", "in", ["Item"]]
         ]
-    }
+    },
+
+    {"doctype": "Print Format", "filters": [["name", "in", ["Item Barcode ZPL"]]]}
 ]
+
+
+
+doc_events = {}
+
+override_whitelisted_methods = {
+    "barcode_printer.api.barcode_api.get_item_print_formats": "barcode_printer.api.barcode_api.get_item_print_formats"
+}
+
 
 
 # Apps

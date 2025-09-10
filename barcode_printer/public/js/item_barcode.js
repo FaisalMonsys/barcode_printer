@@ -1,12 +1,8 @@
 frappe.ui.form.on('Item', {
     refresh(frm) {
         render_barcodes_preview(frm);
-        
     },
- 
 });
-
-// ------------------ Helper Functions ------------------
 
 function loadJsBarcode(callback) {
     if (window.JsBarcode) {
@@ -36,80 +32,112 @@ function render_barcodes_preview(frm) {
         return;
     }
 
+    const $grid = $(`<div style="display:flex; flex-wrap:wrap; gap:15px;"></div>`);
+    wrapper.append($grid);
+
     loadJsBarcode(() => {
         frm.doc.barcodes.forEach((row, index) => {
             if (!row.barcode) return;
 
+            const svgId = 'barcode_svg_' + index;
             const itemName = frm.doc.item_name || "Unnamed Item";
             const itemPrice = frm.doc.standard_rate || frm.doc.price || "0.00";
-            const svgId = 'barcode_svg_' + index;
 
-            // Container
             const $container = $(`
-                <div id="barcode_clickable_${index}" 
-                    style="margin:20px 0; padding:10px; border:1px solid #ddd; border-radius:6px; text-align:center; cursor:pointer;">
+                <div style="flex:0 0 calc(33.333% - 15px); 
+                            box-sizing:border-box;
+                            text-align:center; 
+                            padding:10px; 
+                            border:1px solid #ddd; 
+                            border-radius:6px;">
                     
-                    <div style="font-weight:bold; font-size:16px;">${itemName}</div>
-                    <svg id="${svgId}" style="display:block; margin:6px auto;"></svg>
-                    <div style="font-size:14px; margin-top:4px;">${row.barcode}</div>
-                    <div style="font-size:16px; font-weight:bold; margin-top:4px;">BDT. ${parseFloat(itemPrice).toFixed(2)}</div>
-                    <div style="font-size:12px; color:grey; margin-top:4px;">Click to Print</div>
+                    <div style="font-weight:bold; font-size:14px; margin-bottom:6px;">${itemName}</div>
+                    <svg id="${svgId}" 
+                         style="display:block; margin:6px auto; cursor:pointer; width:200px; height:60px;"></svg>
+                    <div style="font-size:13px; margin-top:4px;">${row.barcode}</div>
+                    <div style="font-size:14px; font-weight:bold; margin-top:6px;">BDT. ${parseFloat(itemPrice).toFixed(2)}</div>
                 </div>
             `);
 
-            wrapper.append($container);
+            $grid.append($container);
 
-            // Generate barcode SVG
             try {
-                let maxBarWidth = 2;
-                let calculatedWidth = Math.min((280 / row.barcode.length), maxBarWidth);
-
                 JsBarcode(`#${svgId}`, String(row.barcode), {
                     format: "CODE128",
-                    width: calculatedWidth,
+                    width: 2,
                     height: 60,
                     displayValue: false,
-                    margin: 10
+                    margin: 0
                 });
             } catch (err) {
                 console.error("❌ JsBarcode error for row " + index, err);
                 $container.append('<div style="color:red">❌ Error generating barcode</div>');
             }
 
-            // Attach print click
-            document.getElementById(`barcode_clickable_${index}`).onclick = () => {
-                let copies = parseInt(prompt("How many copies do you want to print?", "1"));
-                if (!isNaN(copies) && copies > 0) {
-                    print_to_zebra(frm, row.barcode, itemName, itemPrice, copies);
-                } else {
-                    frappe.msgprint("⚠️ Invalid number of copies.");
-                }
+            // Click event ONLY on barcode SVG
+            document.getElementById(svgId).onclick = () => {
+                frappe.call({
+                    method: "barcode_printer.api.barcode_api.get_item_print_formats",
+                    callback: function(r) {
+                        if (!r.message || r.message.length === 0) {
+                            frappe.msgprint("⚠️ No print formats found for Item.");
+                            return;
+                        }
+
+                        let d = new frappe.ui.Dialog({
+                            title: "Print Barcode",
+                            fields: [
+                                {
+                                    fieldname: "copies",
+                                    label: "Number of Copies",
+                                    fieldtype: "Int",
+                                    default: 1,
+                                    reqd: 1
+                                },
+                                {
+                                    fieldname: "format",
+                                    label: "Print Format",
+                                    fieldtype: "Select",
+                                    options: r.message,
+                                    default: "Item Barcode ZPL", // by default this print format will work,
+                                    reqd: 1
+                                }
+                            ],
+                            primary_action_label: "Print",
+                            primary_action(values) {
+                                frappe.call({
+                                    method: "barcode_printer.api.barcode_api.render_item_print_format",
+                                    args: {
+                                        docname: frm.doc.name,
+                                        print_format: values.format,
+                                        // send the clicked barcode ------------------------------
+                                        barcode_value: row.barcode  
+                                    },
+                                    callback: function(res) {
+                                        if (res.message) {
+                                            print_to_zebra(res.message, values.copies, values.format);
+                                        } else {
+                                            frappe.msgprint("⚠️ Failed to render print format.");
+                                        }
+                                    }
+                                });
+                                d.hide();
+                            }
+                        });
+
+                        d.show();
+                    }
+                });
             };
         });
     });
 }
 
-// ------------------ ZPL Printing ------------------
-function print_to_zebra(frm, barcode, itemName, itemPrice, copies = 1) {
+function print_to_zebra(zpl, copies = 1, print_format = "Default") {
     frappe.ui.form.qz_connect()
         .then(() => qz.printers.find("Zebra_Technologies_ZTC_ZD230-203dpi_ZPL"))
         .then(printer => {
             if (!printer) throw new Error("Zebra printer not found!");
-
-            let zpl = `
-^XA
-^CI28
-^PW320
-^LL200
-^LH0,20
-^SD15
-
-^FO100,20^A0N,18,20^FD${itemName}^FS
-^FO90,50^BY2,3,50^BEN,50,Y,N^FD${barcode}^FS
-^FO90,130^A0N,25,32^FDBDT. ${parseFloat(itemPrice).toFixed(2)}^FS
-
-^XZ
-`;
 
             let config = qz.configs.create(printer, {
                 forceRaw: true,
@@ -125,6 +153,6 @@ function print_to_zebra(frm, barcode, itemName, itemPrice, copies = 1) {
 
             return qz.print(config, data);
         })
-        .then(() => frappe.show_alert({ message: `✅ ${copies} label(s) sent to Zebra!`, indicator: "green" }))
+        .then(() => frappe.show_alert({ message: `✅ ${copies} label(s) printed with format: ${print_format}`, indicator: "green" }))
         .catch(err => frappe.msgprint("QZ Print Error: " + err));
 }
